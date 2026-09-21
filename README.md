@@ -2,7 +2,7 @@
 
 Control the **HP Interactive Light** LED found on some HP educational laptop directly from Linux. 
 
-Since HP only ships the light's driver and app for windows I wanted to see how hard it'd be to get working in Linux.
+Since HP only ships the light's driver and app for Windows I wanted to see how hard it'd be to get working in Linux.
 
 Tested on:
 HP ProBook x360 11 G3 EE, BIOS Q95 Ver. 01.05.00
@@ -12,27 +12,70 @@ interface (see [Other models](#other-models)).
 
 ## Requirements
 
-- Root (`sudo`).
-- python
-- gtk
-- The [`acpi_call`](https://github.com/nix-community/acpi_call) kernel module
-
-  ```
-  sudo apt install dkms linux-headers-$(uname -r) acpi-call-dkms
-  ```
+- An HP educational laptop with the Interactive Light. Tested on the **HP ProBook x360 11 G3 EE**;
+  other models only work if their firmware has the same interface (see [Other models](#other-models)).
+- Linux with systemd, and administrator (`sudo`) rights. The commands below are for
+  Ubuntu and other Debian-based systems.
+- Python 3 (already installed on nearly every distribution). The optional window also needs
+  PyGObject and GTK 3 (`python3-gi`, `gir1.2-gtk-3.0`), which standard Ubuntu desktops include.
+- The [`acpi_call`](https://github.com/nix-community/acpi_call) kernel module, installed in step 1.
 
 ## Installation
+
+**1. Install the `acpi_call` module** (lets Linux talk to the light through the laptop's firmware):
+
+```
+sudo apt install dkms linux-headers-$(uname -r) acpi-call-dkms
+sudo modprobe acpi_call
+```
+
+If the installer asks you to set a password, or `modprobe` says *"Key was rejected by service"*,
+your computer has Secure Boot enabled and needs to be told to trust the module. Run
+`sudo mokutil --import /var/lib/shim-signed/mok/MOK.der`, choose a password, reboot, and
+in the blue screen that appears choose **Enroll MOK**, then enter that password. Afterwards run
+`sudo modprobe acpi_call` again.
+
+**2. Check that your laptop is supported** (this only reads, nothing changes):
+
+```
+echo '\_SB.WMIV.GALS' | sudo tee /proc/acpi/call > /dev/null; sudo cat /proc/acpi/call
+```
+
+If the output starts with `Error`, your model doesn't have the light interface; stop here.
+
+**3. Install.** Download or clone this repository, open a terminal in its folder and run:
+
 ```
 sudo ./install.sh install
 ```
-This will install everything to /usr/local/bin and enable the background service controling the LED.
+
+This installs the programs to `/usr/local/bin`, adds "HP Interactive Light" to your app menu,
+and starts a background service that controls the light. It should light up white.
+
+**4. Try it:**
+
+```
+hpledctl help on     # the light blinks red
+hpledctl help off
+```
+
+With nothing selected, the light is solid white while you have internet and blinks red when the battery is low.
+
+**Prefer buttons?** Open **HP Interactive Light** from your app menu (or run `hpledgui`). It kinda works like HP's Windows app:
+
+- **Help** blinks red until you cancel it.
+- **Test** turns the light solid green.
+- **Quiz** lets you pick an answer: A is white, B is green, C is red.
+- **Group** lets you pick a group colour: white, green or red.
+
+A dot on a tab shows which one is active, and choosing the same answer or group again clears it.
+When on the Quiz and Group tabs, the "internet connected" white light stays off until you switch mode, so that an idle light won't be mistaken for a choice.
 
 ## Components
 
 ### Status daemon (hpledd)
 
-`hpledd` is a small systemd service (Python 3, standard library only) that recreates what
-HP's Windows app did with the light. The first rule that applies wins:
+`hpledd` is a small systemd service (Python 3, standard library only) that recreates what HP's Windows app did with the light. The first rule that applies wins:
 
 | Priority | Condition | Light |
 |----------|-----------|-------|
@@ -43,9 +86,7 @@ HP's Windows app did with the light. The first rule that applies wins:
 | 5 | internet connected | solid white |
 | 6 | none of the above | off |
 
-Internet counts as connected when NetworkManager reports `full` connectivity (a captive
-portal or filtered network does not count). Without NetworkManager it falls back to
-"there is a default route". Battery and network are checked every 5 seconds.
+Internet counts as connected when NetworkManager reports `full` connectivity (a captive portal or filtered network does not count). Without NetworkManager it falls back to "there is a default route". Battery and network are checked every 5 seconds.
 
 ```
 hpledctl status                # what the light is doing and why
@@ -57,11 +98,7 @@ hpledctl group white|green|red|off
 hpledctl mode off              # clear test/quiz/group
 ```
 
-`hpledctl` needs no root: the daemon listens on `/run/hpledd/hpledd.sock`, which is
-writable by every local user. Anyone logged in can therefore change the light, which
-seemed fine for a status LED. Change the socket mode in `bind_socket()` if you disagree.
-
-Run the tests with `python3 -m unittest discover -s tests`.
+`hpledctl` needs no root: the daemon listens on `/run/hpledd/hpledd.sock`, which is writable by every local user. Anyone logged in can therefore change the light, which seemed fine for a status LED. Change the socket mode in `bind_socket()` if you disagree.
 
 ### GUI (hpledgui)
 
