@@ -15,7 +15,7 @@ gi.require_version("Gdk", "3.0")
 from gi.repository import Gdk, GLib, Gtk  # noqa: E402
 
 SOCKET = os.environ.get("HPLEDD_SOCKET", "/run/hpledd/hpledd.sock")
-DOT_COLOURS = {"white": "#f2f2f2", "green": "#2bc255", "red": "#ff5257"}
+DOT_COLOURS = ("white", "green", "red")  # CSS classes on the tab dots
 TABS = [("help", "Help"), ("test", "Test"), ("quiz", "Quiz"), ("group", "Group"), ("about", "About")]
 REFRESH_SECONDS = 2
 # Tabs where white is a real choice; hpledd keeps the light off there until one is picked.
@@ -30,6 +30,10 @@ button.tab { background-image: none; background-color: transparent; border: none
              box-shadow: none; color: #8a8a8a; padding: 10px 4px; border-radius: 0;
              text-shadow: none; }
 button.tab.selected { color: #ffffff; font-weight: bold; }
+.dot { min-width: 8px; min-height: 8px; border-radius: 4px; }
+.dot.white { background-color: #f2f2f2; }
+.dot.green { background-color: #2bc255; }
+.dot.red { background-color: #ff5257; }
 button.big { background-image: none; background-color: #4a4a4a; color: #ffffff;
              font-weight: bold; padding: 8px 12px; border: 3px solid transparent;
              border-radius: 2px; text-shadow: none; box-shadow: none; }
@@ -95,7 +99,10 @@ class Panel(Gtk.Box):
             button.get_style_context().add_class("tab")
             row = Gtk.Box(spacing=4, halign=Gtk.Align.CENTER)
             row.pack_start(Gtk.Label(label=title), False, False, 0)
-            dot = Gtk.Label()
+            dot = Gtk.Box()
+            dot.set_valign(Gtk.Align.CENTER)  # centred on the label, not on its text baseline
+            dot.set_margin_bottom(2)  # nudges it up 1px: the label box also holds descender space
+            dot.get_style_context().add_class("dot")
             dot.set_no_show_all(True)
             row.pack_start(dot, False, False, 0)
             button.add(row)
@@ -248,11 +255,9 @@ class Panel(Gtk.Box):
                 "group": arg if kind == "group" else None}
         for tab, colour in dots.items():
             dot = self.tab_dots[tab]
-            if colour:
-                dot.set_markup(f'<span foreground="{DOT_COLOURS[colour]}" size="small">●</span>')
-                dot.show()
-            else:
-                dot.hide()
+            for name in DOT_COLOURS:
+                set_class(dot, name, name == colour)
+            dot.set_visible(colour is not None)
 
         # only worth a line when the light does something the user didn't ask for
         low = st.get("reason") == "low-battery"
