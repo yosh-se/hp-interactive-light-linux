@@ -1,0 +1,18 @@
+# --- Firmware dumps from a specific machine ---
+/acpi/
+*.aml
+*.dsl
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# --- Editors and OS ---
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store

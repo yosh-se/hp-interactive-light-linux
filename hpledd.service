@@ -1,0 +1,19 @@
+[Unit]
+Description=HP Interactive Light status daemon
+After=NetworkManager.service
+
+[Service]
+Type=simple
+ExecStartPre=-/sbin/modprobe acpi_call
+ExecStart=/usr/local/bin/hpledd
+RuntimeDirectory=hpledd
+Restart=on-failure
+RestartSec=5
+# hpledd exits with 78 on unsupported firmware or a missing acpi_call; don't retry those
+RestartPreventExitStatus=78
+NoNewPrivileges=yes
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=HP Interactive Light
+GenericName=Status Light Control
+Comment=Help, test, quiz and group modes for the status light
+Exec=hpledgui
+Icon=hpledgui
+Categories=Utility;
+Keywords=light;led;classroom;quiz;hp;
+StartupWMClass=hpledgui
+Terminal=false
