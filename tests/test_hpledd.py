@@ -89,7 +89,7 @@ class HandleTests(unittest.TestCase):
         d = daemon(Sensors(internet=True))
         d.apply()
         d.apply()
-        d.handle("mode off")
+        d.handle("off")
         self.assertEqual(len(d.backend.calls), 1)
 
     def test_last_mode_wins_and_off_clears_only_matching_kind(self):
@@ -102,11 +102,11 @@ class HandleTests(unittest.TestCase):
         d.handle("quiz off")
         self.assertEqual(d.mode, "none")
 
-    def test_group_and_mode_off(self):
+    def test_group_and_off(self):
         d = daemon()
         d.handle("group red")
         self.assertEqual(d.backend.calls[-1], Led("on", "red"))
-        d.handle("mode off")
+        d.handle("off")
         self.assertEqual(d.backend.calls[-1], OFF)
 
     def test_bad_commands(self):
@@ -139,7 +139,7 @@ class HandleTests(unittest.TestCase):
         d = daemon(Sensors(internet=True))
         d.handle("page quiz")
         self.assertEqual(d.desired(), (OFF, "quiz-page"))
-        d.page_until = time.monotonic() - 1  # GUI stopped refreshing (closed or crashed)
+        d.gui_until = time.monotonic() - 1  # GUI stopped refreshing (closed or crashed)
         self.assertEqual(d.desired()[0], Led("on", "white"))
         d.apply()
         self.assertEqual(d.backend.calls[-1], Led("on", "white"))

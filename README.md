@@ -95,7 +95,7 @@ hpledctl help off
 hpledctl test on|off           # solid green
 hpledctl quiz a|b|c|off        # white / green / red
 hpledctl group white|green|red|off
-hpledctl mode off              # clear test/quiz/group
+hpledctl off                   # clear test/quiz/group
 ```
 
 `hpledctl` needs no root: the daemon listens on `/run/hpledd/hpledd.sock`, which is writable by every local user. Anyone logged in can therefore change the light, which seemed fine for a status LED. Change the socket mode in `bind_socket()` if you disagree.

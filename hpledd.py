@@ -180,17 +180,55 @@ class Daemon:
         self.interval = interval
         self.sense = sense
         self.help = False
+        self.help_live = False       # help was turned on while a client was already polling us
+        self.help_deadline = None    # or: an explicit "expire in N seconds" from the caller
         self.mode = "none"
+        self.mode_live = False       # same idea for test/quiz/group
+        self.mode_deadline = None
         self.page = None
-        self.page_until = 0.0
+        self.gui_until = 0.0  # cleared (help/mode/page all drop) once nobody has polled since this
         self.sensors = Sensors()
         self.applied = None
         self._last_error = None
         self._last_wall = time.time()
 
     def desired(self):
-        page = self.page if time.monotonic() < self.page_until else None
-        return decide(self.help, self.mode, self.sensors, self.low_battery, page)
+        now = time.monotonic()
+        if now >= self.gui_until:
+            # Nobody has talked to us in a while: drop whatever a live session was holding up.
+            # State set with no live session behind it (e.g. a bare hpledctl command) is
+            # untouched here and persists until explicitly cleared.
+            if self.help_live:
+                self.help, self.help_live = False, False
+            if self.mode_live:
+                self.mode, self.mode_live = "none", False
+            self.page = None
+        if self.help_deadline is not None and now >= self.help_deadline:
+            self.help, self.help_deadline = False, None
+        if self.mode_deadline is not None and now >= self.mode_deadline:
+            self.mode, self.mode_deadline = "none", None
+        return decide(self.help, self.mode, self.sensors, self.low_battery, self.page)
+
+    def _start(self, now, gui_live, extra, value_attr, value):
+        """Set help or mode to `value`. `extra` is whatever trailed the command: a single
+        number of seconds sets a fixed deadline that runs regardless of who's still
+        connected; with nothing extra, fall back to the live-GUI heuristic (see `handle`).
+        Returns an error string, or None on success."""
+        deadline = None
+        if extra:
+            if len(extra) > 1:
+                return "error: too many arguments"
+            try:
+                ttl = float(extra[0])
+            except ValueError:
+                return f"error: invalid timeout '{extra[0]}'"
+            if ttl <= 0:
+                return f"error: invalid timeout '{extra[0]}'"
+            deadline = now + ttl
+        setattr(self, value_attr, value)
+        setattr(self, f"{value_attr}_live", gui_live and deadline is None)
+        setattr(self, f"{value_attr}_deadline", deadline)
+        return None
 
     def apply(self):
         led, reason = self.desired()
@@ -220,36 +258,52 @@ class Daemon:
 
     def _clear_mode(self, kind):
         if self.mode == kind or self.mode.startswith(kind + ":"):
-            self.mode = "none"
+            self.mode, self.mode_live, self.mode_deadline = "none", False, None
 
     def handle(self, line):
         """Execute one control command; returns the reply line."""
         cmd = line.strip().lower().split()
+        now = time.monotonic()
+        # hpledgui polls every couple of seconds no matter which tab is showing, so if we
+        # already heard from someone recently *before* this command, a live GUI session is
+        # driving it and whatever it sets (help/test/quiz/group) should expire with that
+        # session (see `desired`), unless an explicit timeout below overrides it. A lone
+        # hpledctl invocation has no such history, so its state persists until explicitly
+        # cleared. Any contact renews the deadline, keeping whatever is already live going.
+        gui_live = now < self.gui_until
+        self.gui_until = now + PAGE_TTL
         if cmd == ["status"]:
             return "ok " + self.status()
-        if len(cmd) == 2 and cmd[0] == "help" and cmd[1] in ("on", "off"):
-            self.help = cmd[1] == "on"
-        elif cmd == ["test", "on"]:
-            self.mode = "test"
-        elif cmd == ["test", "off"]:
+        verb = cmd[0] if cmd else ""
+        error = None
+        if verb == "help" and len(cmd) >= 2 and cmd[1] == "on":
+            error = self._start(now, gui_live, cmd[2:], "help", True)
+        elif verb == "help" and cmd[1:] == ["off"]:
+            self.help, self.help_live, self.help_deadline = False, False, None
+        elif verb == "test" and len(cmd) >= 2 and cmd[1] == "on":
+            error = self._start(now, gui_live, cmd[2:], "mode", "test")
+        elif verb == "test" and cmd[1:] == ["off"]:
             self._clear_mode("test")
-        elif len(cmd) == 2 and cmd[0] == "quiz" and cmd[1] in ("a", "b", "c"):
-            self.mode = f"quiz:{cmd[1]}"
-        elif cmd == ["quiz", "off"]:
+        elif verb == "quiz" and len(cmd) >= 2 and cmd[1] in ("a", "b", "c"):
+            error = self._start(now, gui_live, cmd[2:], "mode", f"quiz:{cmd[1]}")
+        elif verb == "quiz" and cmd[1:] == ["off"]:
             self._clear_mode("quiz")
-        elif len(cmd) == 2 and cmd[0] == "page" and cmd[1] in COLOUR_PAGES:
+        elif verb == "page" and len(cmd) == 2 and cmd[1] in COLOUR_PAGES:
             self.page = cmd[1]
-            self.page_until = time.monotonic() + PAGE_TTL
-        elif cmd == ["page", "none"]:
+        elif verb == "page" and cmd[1:] == ["none"]:
             self.page = None
-        elif len(cmd) == 2 and cmd[0] == "group" and cmd[1] in ("white", "green", "red"):
-            self.mode = f"group:{cmd[1]}"
-        elif cmd == ["group", "off"]:
+        elif verb == "group" and len(cmd) >= 2 and cmd[1] in ("white", "green", "red"):
+            error = self._start(now, gui_live, cmd[2:], "mode", f"group:{cmd[1]}")
+        elif verb == "group" and cmd[1:] == ["off"]:
             self._clear_mode("group")
-        elif cmd == ["mode", "off"]:
-            self.mode = "none"
+        elif cmd == ["off"]:
+            self.mode, self.mode_live, self.mode_deadline = "none", False, None
+        elif verb in ("help", "test", "quiz", "group", "page", "off", "status"):
+            return f"error: bad argument to '{verb}'"
         else:
-            return "error: unknown command"
+            return f"error: unknown command '{verb}'" if verb else "error: no command given"
+        if error:
+            return error
         self.apply()
         return "ok " + self.status()
 
